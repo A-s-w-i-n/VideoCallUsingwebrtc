@@ -12,7 +12,7 @@ const configuration = {
   iceCandidatePoolSize: 10,
 };
 
-const socket = io('http://localhost:5000', { transports: ['websocket'] });
+const socket = io('https://videocall-backend-wqwv.onrender.com', { transports: ['websocket'] });
 
 let pcs = {};
 let localStream;
