@@ -1,10 +1,5 @@
 import io from "socket.io-client";
-import {
-  useRef,
-  useState,
-  useEffect,
-  useCallback,
-} from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import { FiVideo, FiVideoOff, FiMic, FiMicOff } from "react-icons/fi";
 import "./App.css";
 
@@ -19,7 +14,6 @@ const configuration = {
 
 // http://localhost:5000
 // https://videocall-backend-wqwv.onrender.com
-
 const socket = io("https://videocall-backend-wqwv.onrender.com", { transports: ["websocket"] });
 
 function App() {
@@ -126,8 +120,9 @@ function App() {
   };
 
   const createPeerConnection = async (userId) => {
-    pcsRef.current[userId] = new RTCPeerConnection(configuration);
-    pcsRef.current[userId].onicecandidate = (e) => {
+    const pc = new RTCPeerConnection(configuration);
+
+    pc.onicecandidate = (e) => {
       if (e.candidate) {
         socket.emit("message", {
           type: "candidate",
@@ -138,7 +133,8 @@ function App() {
         });
       }
     };
-    pcsRef.current[userId].ontrack = (e) => {
+
+    pc.ontrack = (e) => {
       if (!remoteVideosRef.current[userId]) {
         const video = document.createElement("video");
         video.srcObject = e.streams[0];
@@ -149,11 +145,14 @@ function App() {
         document.querySelector(".remote-videos").appendChild(video);
       }
     };
+
     if (localStream) {
-      localStream.getTracks().forEach((track) =>
-        pcsRef.current[userId].addTrack(track, localStream)
-      );
+      localStream.getTracks().forEach((track) => {
+        pc.addTrack(track, localStream);
+      });
     }
+
+    pcsRef.current[userId] = pc;
   };
 
   const handleOffer = async (offer) => {
