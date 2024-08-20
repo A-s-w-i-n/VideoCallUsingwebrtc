@@ -144,6 +144,7 @@ function App() {
         remoteVideosRef.current[userId] = video;
         document.querySelector(".remote-videos").appendChild(video);
       } else {
+        // Update the existing video element
         remoteVideosRef.current[userId].srcObject = e.streams[0];
       }
     };
