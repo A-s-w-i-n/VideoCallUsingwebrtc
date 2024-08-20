@@ -16,48 +16,11 @@
   gap: 10px;
 }
 
-.app {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.room-controls,
-.video-chat {
-  margin: 20px;
-}
-
-.local-video-container,
-.remote-videos {
-  margin-bottom: 20px;
-}
-
-.local-video {
-  width: 300px;
-  height: 200px;
-  border: 2px solid #000;
-}
-
-.remote-videos {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.remote-video {
-  width: 200px;
-  height: 150px;
-  border: 2px solid #000;
-}
-
-.controls button {
-  margin: 5px;
-}
-
 .remote-video {
   width: 150px;
   height: 150px;
-  object-fit: cover;
+  border: 1px solid #ddd;
+  border-radius: 5px;
 }
 
 .logo {
