@@ -17,7 +17,10 @@ const configuration = {
   iceCandidatePoolSize: 10,
 };
 
-const socket = io("http://localhost:5000", { transports: ["websocket"] });
+// http://localhost:5000
+// https://videocall-backend-wqwv.onrender.com
+
+const socket = io("https://videocall-backend-wqwv.onrender.com", { transports: ["websocket"] });
 
 function App() {
   const [roomId, setRoomId] = useState("");
