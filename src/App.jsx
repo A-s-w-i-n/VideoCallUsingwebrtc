@@ -143,6 +143,8 @@ function App() {
         video.className = "remote-video";
         remoteVideosRef.current[userId] = video;
         document.querySelector(".remote-videos").appendChild(video);
+      } else {
+        remoteVideosRef.current[userId].srcObject = e.streams[0];
       }
     };
 

@@ -10,6 +10,17 @@
   border: 1px solid #ccc;
   object-fit: cover; /* This ensures the video fills the element */
 }
+.remote-videos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.remote-video {
+  width: 150px;
+  height: 150px;
+  object-fit: cover;
+}
 
 .logo {
   height: 6em;
