@@ -4,7 +4,6 @@ import {
   useState,
   useEffect,
   useCallback,
-  useLayoutEffect,
 } from "react";
 import { FiVideo, FiVideoOff, FiMic, FiMicOff } from "react-icons/fi";
 import "./App.css";
@@ -17,9 +16,8 @@ const configuration = {
   ],
   iceCandidatePoolSize: 10,
 };
-// http://localhost:5000
-// https://videocall-backend-wqwv.onrender.com
-const socket = io("https://videocall-backend-wqwv.onrender.com", { transports: ["websocket"] });
+
+const socket = io("http://localhost:5000", { transports: ["websocket"] });
 
 function App() {
   const [roomId, setRoomId] = useState("");
@@ -51,23 +49,15 @@ function App() {
 
   useEffect(() => {
     if (localStream) {
-      console.log(localStream);
-
       if (localVideoRef.current) {
-        console.log("Setting local video stream:", localStream);
         localVideoRef.current.srcObject = localStream;
       } else {
-        // Use another effect to handle the case where the ref might be null due to re-rendering
         const interval = setInterval(() => {
           if (localVideoRef.current) {
-            console.log(
-              "Ref found on re-render, setting local video stream:",
-              localStream
-            );
             localVideoRef.current.srcObject = localStream;
             clearInterval(interval);
           }
-        }, 100); // retry every 100ms until the ref is available
+        }, 100);
       }
     }
   }, [localStream]);
@@ -88,12 +78,6 @@ function App() {
         break;
     }
   };
-  //   useEffect(() => {
-  //     if (localStream && localVideoRef.current) {
-  //       console.log("Setting local video stream:", localStream);
-  //       localVideoRef.current.srcObject = localStream;
-  //     }
-  // }, [localStream]);
 
   const handleUserJoined = async (userId) => {
     console.log(`User ${userId} joined the room`);
@@ -104,6 +88,7 @@ function App() {
       socket.emit("message", {
         type: "offer",
         sdp: offer.sdp,
+        from: socket.id, // send your socket id as the "from" field
         roomId,
         to: userId,
       });
@@ -144,6 +129,7 @@ function App() {
         socket.emit("message", {
           type: "candidate",
           candidate: e.candidate,
+          from: socket.id,
           roomId,
           to: userId,
         });
@@ -161,11 +147,9 @@ function App() {
       }
     };
     if (localStream) {
-      localStream
-        .getTracks()
-        .forEach((track) =>
-          pcsRef.current[userId].addTrack(track, localStream)
-        );
+      localStream.getTracks().forEach((track) =>
+        pcsRef.current[userId].addTrack(track, localStream)
+      );
     }
   };
 
@@ -174,13 +158,14 @@ function App() {
       await createPeerConnection(offer.from);
     }
     await pcsRef.current[offer.from].setRemoteDescription(
-      new RTCSessionDescription(offer)
+      new RTCSessionDescription({ type: "offer", sdp: offer.sdp })
     );
     const answer = await pcsRef.current[offer.from].createAnswer();
     await pcsRef.current[offer.from].setLocalDescription(answer);
     socket.emit("message", {
       type: "answer",
       sdp: answer.sdp,
+      from: socket.id,
       roomId,
       to: offer.from,
     });
@@ -188,7 +173,7 @@ function App() {
 
   const handleAnswer = async (answer) => {
     await pcsRef.current[answer.from].setRemoteDescription(
-      new RTCSessionDescription(answer)
+      new RTCSessionDescription({ type: "answer", sdp: answer.sdp })
     );
   };
 
@@ -204,13 +189,12 @@ function App() {
         video: { facingMode: "user" },
         audio: true,
       });
-      console.log("hiiii");
-
       setLocalStream(stream);
     } catch (err) {
       console.error("Error accessing media devices:", err);
     }
   }, []);
+
   const createRoom = useCallback(async () => {
     await startLocalStream();
     socket.emit("createRoom", roomId);
