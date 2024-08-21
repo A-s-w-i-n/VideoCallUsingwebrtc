@@ -14,7 +14,7 @@ const configuration = {
 
 // http://localhost:5000
 // https://videocall-backend-wqwv.onrender.com
-const socket = io("https://videocall-backend-wqwv.onrender.com", {
+const socket = io("http://localhost:5000", {
   transports: ["websocket"],
 });
 
@@ -72,7 +72,7 @@ function App() {
   const handleRoomUsers = async (users) => {
     const updatedUsers = users.map((userId) => ({
       id: userId,
-      stream: userId === socket.id ? localStream : null, 
+      stream: userId === socket.id ? localStream : null,
     }));
     setUsers(updatedUsers);
 
@@ -116,10 +116,7 @@ function App() {
         });
       }
     }
-    setUsers((prevUsers) => [
-      ...prevUsers,
-      { id: userId, stream: null } 
-    ]);
+    setUsers((prevUsers) => [...prevUsers, { id: userId, stream: null }]);
   };
 
   const handleUserLeft = (userId) => {
@@ -130,7 +127,8 @@ function App() {
     }
     if (remoteVideosRef.current[userId]) {
       const video = remoteVideosRef.current[userId];
-      video.remove();
+      video.srcObject = null; // Stop the video stream
+      video.remove(); // Remove the video element from the DOM
       delete remoteVideosRef.current[userId];
     }
   };
@@ -152,7 +150,7 @@ function App() {
 
   const createPeerConnection = async (userId) => {
     const pc = new RTCPeerConnection(configuration);
-  
+
     pc.onicecandidate = (e) => {
       if (e.candidate) {
         socket.emit("message", {
@@ -164,7 +162,7 @@ function App() {
         });
       }
     };
-  
+
     pc.ontrack = (e) => {
       const remoteStream = e.streams[0];
       setUsers((prevUsers) =>
@@ -172,7 +170,7 @@ function App() {
           user.id === userId ? { ...user, stream: remoteStream } : user
         )
       );
-  
+
       // Create and append video element if not already present
       if (!remoteVideosRef.current[userId]) {
         const video = document.createElement("video");
@@ -189,7 +187,7 @@ function App() {
         remoteVideosRef.current[userId].srcObject = remoteStream;
       }
     };
-  
+
     if (localStream) {
       localStream.getTracks().forEach((track) => {
         pc.addTrack(track, localStream);
@@ -283,7 +281,6 @@ function App() {
       }
     }
   };
-  console.log(users.length);
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
@@ -314,7 +311,7 @@ function App() {
         </div>
       ) : (
         <div className="flex flex-col items-center space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="remote-videos grid grid-cols-1 md:grid-cols-2 gap-4">
             {users.map((user) => (
               <video
                 key={user.id}
@@ -323,8 +320,7 @@ function App() {
                 playsInline
                 muted={user.id === socket.id}
                 className="w-full h-auto rounded-md"
-                // Ensure proper srcObject assignment
-                srcObject={user.stream}
+                // No need to use srcObject directly here
               />
             ))}
           </div>
@@ -352,8 +348,6 @@ function App() {
       )}
     </div>
   );
-  
-  
 }
 
 export default App;
