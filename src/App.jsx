@@ -14,7 +14,7 @@ const configuration = {
 
 // http://localhost:5000
 // https://videocall-backend-wqwv.onrender.com
-const socket = io("https://videocall-backend-wqwv.onrender.com", {
+const socket = io("http://localhost:5000", {
   transports: ["websocket"],
 });
 
@@ -53,6 +53,7 @@ function App() {
         localVideoRef.current.srcObject = localStream;
       } else {
         const interval = setInterval(() => {
+          console.log(localVideoRef);
           if (localVideoRef.current) {
             localVideoRef.current.srcObject = localStream;
             clearInterval(interval);
@@ -72,15 +73,54 @@ function App() {
   const handleRoomUsers = async (users) => {
     const updatedUsers = users.map((userId) => ({
       id: userId,
-      stream: userId === socket.id ? localStream : null,
+      stream: null,
+      isLocalUser: userId === socket.id,
     }));
     setUsers(updatedUsers);
-
+  
     for (const userId of users) {
-      if (userId !== socket.id && !pcsRef.current[userId]) {
+      if (!pcsRef.current[userId]) {
         await createPeerConnection(userId);
+  
+        // Ensure an offer is created and sent when joining the room
+        if (isInRoom) {
+          const offer = await pcsRef.current[userId].createOffer();
+          await pcsRef.current[userId].setLocalDescription(offer);
+          socket.emit("message", {
+            type: "offer",
+            sdp: offer.sdp,
+            from: socket.id,
+            roomId,
+            to: userId,
+          });
+        }
+  
+        // Create and append video element for the remote user
+        if (!remoteVideosRef.current[userId]) {
+          const video = document.createElement("video");
+          video.srcObject = updatedUsers.find((u) => u.id === userId)?.stream;
+          video.autoplay = true;
+          video.playsInline = true;
+          video.className = "remote-video";
+          remoteVideosRef.current[userId] = video;
+          const remoteVideosContainer = document.querySelector(".remote-videos");
+          if (remoteVideosContainer) {
+            remoteVideosContainer.appendChild(video);
+          }
+        } else {
+          remoteVideosRef.current[userId].srcObject = updatedUsers.find(
+            (u) => u.id === userId
+          )?.stream;
+        }
       }
     }
+  
+    // Update the local user's stream after creating peer connections
+    setUsers((prevUsers) =>
+      prevUsers.map((user) =>
+        user.id !== socket.id ? { ...user, stream: pcsRef.current[user.id]?.remoteStream } : user
+      )
+    );
   };
 
   const handleMessage = async (message) => {
@@ -105,6 +145,8 @@ function App() {
     if (!pcsRef.current[userId]) {
       await createPeerConnection(userId);
       if (isInRoom) {
+        console.log(isInRoom);
+
         const offer = await pcsRef.current[userId].createOffer();
         await pcsRef.current[userId].setLocalDescription(offer);
         socket.emit("message", {
@@ -127,8 +169,8 @@ function App() {
     }
     if (remoteVideosRef.current[userId]) {
       const video = remoteVideosRef.current[userId];
-      video.srcObject = null; // Stop the video stream
-      video.remove(); // Remove the video element from the DOM
+      video.srcObject = null;
+      video.remove();
       delete remoteVideosRef.current[userId];
     }
   };
@@ -150,18 +192,6 @@ function App() {
 
   const createPeerConnection = async (userId) => {
     const pc = new RTCPeerConnection(configuration);
-
-    pc.onicecandidate = (e) => {
-      if (e.candidate) {
-        socket.emit("message", {
-          type: "candidate",
-          candidate: e.candidate,
-          from: socket.id,
-          roomId,
-          to: userId,
-        });
-      }
-    };
 
     pc.ontrack = (e) => {
       const remoteStream = e.streams[0];
@@ -225,6 +255,7 @@ function App() {
       new RTCIceCandidate(candidate.candidate)
     );
   };
+  console.log(localStream);
 
   const startLocalStream = useCallback(async () => {
     try {
@@ -311,19 +342,29 @@ function App() {
         </div>
       ) : (
         <div className="flex flex-col items-center space-y-4">
-          <div className="remote-videos grid grid-cols-1 md:grid-cols-2 gap-4">
-            {users.map((user) => (
+          <div className="remote-videos bg-black grid grid-cols-1 md:grid-cols-3 gap-4">
+            {users.filter((user) => user.id !== socket.id).map((user) => (
               <video
                 key={user.id}
-                ref={user.id === socket.id ? localVideoRef : null}
                 autoPlay
                 playsInline
-                muted={user.id === socket.id}
                 className="w-full h-auto rounded-md"
-                // No need to use srcObject directly here
+                // eslint-disable-next-line react/no-unknown-property
+                srcObject={user.stream}
               />
             ))}
           </div>
+          {localStream && (
+            <video
+              ref={localVideoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-64 h-auto rounded-md self-center"
+              // eslint-disable-next-line react/no-unknown-property
+              srcObject={localStream}
+            />
+          )}
           <div className="flex space-x-4 mt-4">
             <button
               onClick={toggleAudio}
