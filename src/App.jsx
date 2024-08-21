@@ -14,7 +14,7 @@ const configuration = {
 
 // http://localhost:5000
 // https://videocall-backend-wqwv.onrender.com
-const socket = io("https://videocall-backend-wqwv.onrender.com", {
+const socket = io("http://localhost:5000", {
   transports: ["websocket"],
 });
 
@@ -151,10 +151,8 @@ function App() {
   };
 
   const createPeerConnection = async (userId) => {
-    console.log(userId);
-
     const pc = new RTCPeerConnection(configuration);
-
+  
     pc.onicecandidate = (e) => {
       if (e.candidate) {
         socket.emit("message", {
@@ -166,32 +164,32 @@ function App() {
         });
       }
     };
-    // pc.ontrack = (e) => {
-    //   if (!remoteVideosRef.current[userId]) {
-    //     const video = document.createElement("video");
-    //     video.srcObject = e.streams[0];
-    //     video.autoplay = true;
-    //     video.playsInline = true;
-    //     video.className = "remote-video";
-    //     remoteVideosRef.current[userId] = video;
-    //     const remoteVideosContainer = document.querySelector(".remote-videos");
-    //     if (remoteVideosContainer) {
-    //       console.log(`Appending video element for ${userId} to container`);
-    //       remoteVideosContainer.appendChild(video);
-    //     } else {
-    //       console.error("Remote videos container not found");
-    //     }
-    //   } else {
-    //     remoteVideosRef.current[userId].srcObject = e.streams[0];
-    //   }
-    // };
+  
     pc.ontrack = (e) => {
+      const remoteStream = e.streams[0];
       setUsers((prevUsers) =>
         prevUsers.map((user) =>
-          user.id === userId ? { ...user, stream: e.streams[0] } : user
+          user.id === userId ? { ...user, stream: remoteStream } : user
         )
       );
+  
+      // Create and append video element if not already present
+      if (!remoteVideosRef.current[userId]) {
+        const video = document.createElement("video");
+        video.srcObject = remoteStream;
+        video.autoplay = true;
+        video.playsInline = true;
+        video.className = "remote-video";
+        remoteVideosRef.current[userId] = video;
+        const remoteVideosContainer = document.querySelector(".remote-videos");
+        if (remoteVideosContainer) {
+          remoteVideosContainer.appendChild(video);
+        }
+      } else {
+        remoteVideosRef.current[userId].srcObject = remoteStream;
+      }
     };
+  
     if (localStream) {
       localStream.getTracks().forEach((track) => {
         pc.addTrack(track, localStream);
@@ -321,14 +319,12 @@ function App() {
               <video
                 key={user.id}
                 ref={user.id === socket.id ? localVideoRef : null}
-                // eslint-disable-next-line react/no-unknown-property
-                srcObject={user.stream}
                 autoPlay
                 playsInline
                 muted={user.id === socket.id}
-                className={`${
-                  user.id === socket.id ? "w-full h-auto rounded-md" : "w-full h-auto rounded-md"
-                }`}
+                className="w-full h-auto rounded-md"
+                // Ensure proper srcObject assignment
+                srcObject={user.stream}
               />
             ))}
           </div>
@@ -356,6 +352,7 @@ function App() {
       )}
     </div>
   );
+  
   
 }
 
