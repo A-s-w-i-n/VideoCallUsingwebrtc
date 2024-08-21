@@ -6,7 +6,7 @@ import "./App.css";
 const configuration = {
   iceServers: [
     {
-      urls: "stun:stun.l.google.com:19302"
+      urls: "stun:stun.l.google.com:19302",
     },
   ],
   iceCandidatePoolSize: 10,
@@ -26,6 +26,7 @@ function App() {
   const [localStream, setLocalStream] = useState(null);
   const localVideoRef = useRef(null);
   const remoteVideosRef = useRef({});
+  const [users, setUsers] = useState([]);
   const pcsRef = useRef({});
 
   useEffect(() => {
@@ -61,6 +62,27 @@ function App() {
     }
   }, [localStream]);
 
+  useEffect(() => {
+    socket.on("roomUsers", handleRoomUsers);
+    return () => {
+      socket.off("roomUsers", handleRoomUsers);
+    };
+  }, []);
+
+  const handleRoomUsers = async (users) => {
+    const updatedUsers = users.map((userId) => ({
+      id: userId,
+      stream: userId === socket.id ? localStream : null, 
+    }));
+    setUsers(updatedUsers);
+
+    for (const userId of users) {
+      if (userId !== socket.id && !pcsRef.current[userId]) {
+        await createPeerConnection(userId);
+      }
+    }
+  };
+
   const handleMessage = async (message) => {
     switch (message.type) {
       case "offer":
@@ -80,18 +102,24 @@ function App() {
 
   const handleUserJoined = async (userId) => {
     console.log(`User ${userId} joined the room`);
-    await createPeerConnection(userId);
-    if (pcsRef.current[userId]) {
-      const offer = await pcsRef.current[userId].createOffer();
-      await pcsRef.current[userId].setLocalDescription(offer);
-      socket.emit("message", {
-        type: "offer",
-        sdp: offer.sdp,
-        from: socket.id, // send your socket id as the "from" field
-        roomId,
-        to: userId,
-      });
+    if (!pcsRef.current[userId]) {
+      await createPeerConnection(userId);
+      if (isInRoom) {
+        const offer = await pcsRef.current[userId].createOffer();
+        await pcsRef.current[userId].setLocalDescription(offer);
+        socket.emit("message", {
+          type: "offer",
+          sdp: offer.sdp,
+          from: socket.id,
+          roomId,
+          to: userId,
+        });
+      }
     }
+    setUsers((prevUsers) => [
+      ...prevUsers,
+      { id: userId, stream: null } 
+    ]);
   };
 
   const handleUserLeft = (userId) => {
@@ -123,6 +151,8 @@ function App() {
   };
 
   const createPeerConnection = async (userId) => {
+    console.log(userId);
+
     const pc = new RTCPeerConnection(configuration);
 
     pc.onicecandidate = (e) => {
@@ -136,28 +166,37 @@ function App() {
         });
       }
     };
-
+    // pc.ontrack = (e) => {
+    //   if (!remoteVideosRef.current[userId]) {
+    //     const video = document.createElement("video");
+    //     video.srcObject = e.streams[0];
+    //     video.autoplay = true;
+    //     video.playsInline = true;
+    //     video.className = "remote-video";
+    //     remoteVideosRef.current[userId] = video;
+    //     const remoteVideosContainer = document.querySelector(".remote-videos");
+    //     if (remoteVideosContainer) {
+    //       console.log(`Appending video element for ${userId} to container`);
+    //       remoteVideosContainer.appendChild(video);
+    //     } else {
+    //       console.error("Remote videos container not found");
+    //     }
+    //   } else {
+    //     remoteVideosRef.current[userId].srcObject = e.streams[0];
+    //   }
+    // };
     pc.ontrack = (e) => {
-      if (!remoteVideosRef.current[userId]) {
-        const video = document.createElement("video");
-        video.srcObject = e.streams[0];
-        video.autoplay = true;
-        video.playsInline = true;
-        video.className = "remote-video";
-        remoteVideosRef.current[userId] = video;
-        document.querySelector(".remote-videos").appendChild(video);
-      } else {
-        // Update the existing video element
-        remoteVideosRef.current[userId].srcObject = e.streams[0];
-      }
+      setUsers((prevUsers) =>
+        prevUsers.map((user) =>
+          user.id === userId ? { ...user, stream: e.streams[0] } : user
+        )
+      );
     };
-
     if (localStream) {
       localStream.getTracks().forEach((track) => {
         pc.addTrack(track, localStream);
       });
     }
-
     pcsRef.current[userId] = pc;
   };
 
@@ -198,6 +237,7 @@ function App() {
         audio: true,
       });
       setLocalStream(stream);
+      setUsers((prevUsers) => [...prevUsers, { id: socket.id, stream }]);
     } catch (err) {
       console.error("Error accessing media devices:", err);
     }
@@ -211,6 +251,7 @@ function App() {
   const joinRoom = useCallback(async () => {
     await startLocalStream();
     socket.emit("joinRoom", roomId);
+    setIsInRoom(true);
   }, [roomId, startLocalStream]);
 
   const leaveRoom = () => {
@@ -244,48 +285,78 @@ function App() {
       }
     }
   };
+  console.log(users.length);
 
   return (
-    <div className="app">
-      <h1>Video Call App</h1>
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
+      <h1 className="text-2xl font-bold mb-4">Video Call App</h1>
       {!isInRoom ? (
-        <div className="room-controls">
+        <div className="flex flex-col items-center space-y-4">
           <input
             type="text"
             value={roomId}
             onChange={(e) => setRoomId(e.target.value)}
             placeholder="Enter Room ID"
+            className="p-2 border rounded-md"
           />
-          <button onClick={createRoom}>Create Room</button>
-          <button onClick={joinRoom}>Join Room</button>
+          <div className="flex space-x-4">
+            <button
+              onClick={createRoom}
+              className="px-4 py-2 bg-blue-500 text-white rounded-md"
+            >
+              Create Room
+            </button>
+            <button
+              onClick={joinRoom}
+              className="px-4 py-2 bg-green-500 text-white rounded-md"
+            >
+              Join Room
+            </button>
+          </div>
         </div>
       ) : (
-        <div className="video-chat">
-          <div className="local-video-container">
-            {localStream && (
+        <div className="flex flex-col items-center space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {users.map((user) => (
               <video
-                ref={localVideoRef}
+                key={user.id}
+                ref={user.id === socket.id ? localVideoRef : null}
+                // eslint-disable-next-line react/no-unknown-property
+                srcObject={user.stream}
                 autoPlay
                 playsInline
-                muted
-                className="local-video"
+                muted={user.id === socket.id}
+                className={`${
+                  user.id === socket.id ? "w-full h-auto rounded-md" : "w-full h-auto rounded-md"
+                }`}
               />
-            )}
+            ))}
           </div>
-          <div className="remote-videos"></div>
-          <div className="controls">
-            <button onClick={toggleAudio}>
+          <div className="flex space-x-4 mt-4">
+            <button
+              onClick={toggleAudio}
+              className="p-2 bg-gray-800 text-white rounded-full"
+            >
               {audioEnabled ? <FiMic /> : <FiMicOff />}
             </button>
-            <button onClick={toggleVideo}>
+            <button
+              onClick={toggleVideo}
+              className="p-2 bg-gray-800 text-white rounded-full"
+            >
               {videoEnabled ? <FiVideo /> : <FiVideoOff />}
             </button>
-            <button onClick={leaveRoom}>Leave Room</button>
+            <button
+              onClick={leaveRoom}
+              className="px-4 py-2 bg-red-500 text-white rounded-md"
+            >
+              Leave Room
+            </button>
           </div>
         </div>
       )}
     </div>
   );
+  
 }
 
 export default App;
