@@ -27,6 +27,7 @@ function App() {
   const localVideoRef = useRef(null);
   const remoteVideosRef = useRef({});
   const [users, setUsers] = useState([]);
+  const [userStream,setUserStream] = useState("")
   const pcsRef = useRef({});
 
   console.log(users);
@@ -112,7 +113,11 @@ function App() {
       }
 
       // Update the remote user's stream
+      console.log(pcsRef.current[userId]);
+
       const remoteStream = pcsRef.current[userId]?.remoteStream;
+      console.log(remoteStream);
+
       setUsers((prevUsers) =>
         prevUsers.map((user) =>
           user.id === userId ? { ...user, stream: remoteStream } : user
@@ -187,7 +192,10 @@ function App() {
   const handleUserJoined = async (userId) => {
     console.log(`User ${userId} joined the room`);
 
-    if (!pcsRef.current[userId]) {
+    console.log(pcsRef.current[userId]);
+    if (pcsRef.current[userId]) {
+      console.log("hiiiiii");
+
       const pc = await createPeerConnection(userId);
 
       // Request user media immediately
@@ -198,6 +206,8 @@ function App() {
         });
         stream.getTracks().forEach((track) => {
           pc.addTrack(track, stream);
+          setUserStream(stream)
+          console.log(stream);
         });
 
         const offer = await pc.createOffer();
@@ -288,11 +298,15 @@ function App() {
   //   return pc
   // };
   const createPeerConnection = async (userId) => {
+    console.log("hii");
+    
     const pc = new RTCPeerConnection(configuration);
 
     pc.ontrack = (e) => {
       console.log("Received track for user", userId);
-      const [remoteStream] = e.streams;
+      const remoteStream = e.streams;
+
+      console.log(remoteStream);
 
       setUsers((prevUsers) =>
         prevUsers.map((user) =>
@@ -513,9 +527,9 @@ function App() {
                           ref={(el) => {
                             console.log(el);
 
-                            if (el && user.stream) {
+                            if (el && userStream) {
                               console.log("jiiii");
-                              el.srcObject = user.stream;
+                              el.srcObject = userStream;
                             } else {
                               console.log("dont");
                             }
