@@ -14,7 +14,7 @@ const configuration = {
 
 // http://localhost:5000
 // https://videocall-backend-wqwv.onrender.com
-const socket = io("https://videocall-backend-wqwv.onrender.com", {
+const socket = io("http://localhost:5000", {
   transports: ["websocket"],
 });
 
@@ -73,17 +73,17 @@ function App() {
   const handleRoomUsers = async (users) => {
     const updatedUsers = users.map((userId) => ({
       id: userId,
-      stream: null,
+      stream: userId === socket.id ? localStream : null,
       isLocalUser: userId === socket.id,
     }));
     setUsers(updatedUsers);
-  
+
     for (const userId of users) {
       if (!pcsRef.current[userId]) {
         await createPeerConnection(userId);
-  
+
         // Ensure an offer is created and sent when joining the room
-        if (isInRoom) {
+        if (isInRoom && userId !== socket.id) {
           const offer = await pcsRef.current[userId].createOffer();
           await pcsRef.current[userId].setLocalDescription(offer);
           socket.emit("message", {
@@ -94,35 +94,37 @@ function App() {
             to: userId,
           });
         }
-  
+
         // Create and append video element for the remote user
-        if (!remoteVideosRef.current[userId]) {
-          const video = document.createElement("video");
-          video.srcObject = updatedUsers.find((u) => u.id === userId)?.stream;
-          video.autoplay = true;
-          video.playsInline = true;
-          video.className = "remote-video";
-          remoteVideosRef.current[userId] = video;
-          const remoteVideosContainer = document.querySelector(".remote-videos");
-          if (remoteVideosContainer) {
-            remoteVideosContainer.appendChild(video);
-          }
-        } else {
-          remoteVideosRef.current[userId].srcObject = updatedUsers.find(
-            (u) => u.id === userId
-          )?.stream;
-        }
+        // if (!remoteVideosRef.current[userId]) {
+        //   const video = document.createElement("video");
+        //   video.autoplay = true;
+        //   video.playsInline = true;
+        //   video.className = "remote-video";
+        //   remoteVideosRef.current[userId] = video;
+        //   const remoteVideosContainer = document.querySelector(".remote-videos");
+        //   if (remoteVideosContainer) {
+        //     remoteVideosContainer.appendChild(video);
+        //   }
+        // }
+      }
+
+      // Update the remote user's stream
+      const remoteVideo = remoteVideosRef.current[userId];
+      if (remoteVideo) {
+        remoteVideo.srcObject = pcsRef.current[userId]?.remoteStream;
       }
     }
-  
+
     // Update the local user's stream after creating peer connections
     setUsers((prevUsers) =>
       prevUsers.map((user) =>
-        user.id !== socket.id ? { ...user, stream: pcsRef.current[user.id]?.remoteStream } : user
+        user.id !== socket.id
+          ? { ...user, stream: pcsRef.current[user.id]?.remoteStream }
+          : { ...user, stream: localStream }
       )
     );
   };
-
   const handleMessage = async (message) => {
     switch (message.type) {
       case "offer":
@@ -140,11 +142,22 @@ function App() {
     }
   };
 
+
   const handleUserJoined = async (userId) => {
     console.log(`User ${userId} joined the room`);
+
+
+    console.log(pcsRef.current);
+    
+
+
     if (!pcsRef.current[userId]) {
+      console.log("hiiiiiii");
+
       await createPeerConnection(userId);
       if (isInRoom) {
+        console.log("jiii");
+        
         console.log(isInRoom);
 
         const offer = await pcsRef.current[userId].createOffer();
@@ -154,11 +167,18 @@ function App() {
           sdp: offer.sdp,
           from: socket.id,
           roomId,
-          to: userId,
+          to: userId, 
         });
       }
     }
-    setUsers((prevUsers) => [...prevUsers, { id: userId, stream: null }]);
+    
+
+    setUsers((prevUsers) => [
+      ...prevUsers,
+      { id: userId, stream: pcsRef.current[userId]?.remoteStream || null },
+    ]);
+    console.log("hiiii");
+
   };
 
   const handleUserLeft = (userId) => {
@@ -195,6 +215,8 @@ function App() {
 
     pc.ontrack = (e) => {
       const remoteStream = e.streams[0];
+      console.log(remoteStream, "checking");
+
       setUsers((prevUsers) =>
         prevUsers.map((user) =>
           user.id === userId ? { ...user, stream: remoteStream } : user
@@ -263,6 +285,8 @@ function App() {
         video: { facingMode: "user" },
         audio: true,
       });
+      console.log(stream);
+
       setLocalStream(stream);
       setUsers((prevUsers) => [...prevUsers, { id: socket.id, stream }]);
     } catch (err) {
@@ -272,11 +296,15 @@ function App() {
 
   const createRoom = useCallback(async () => {
     await startLocalStream();
+    console.log(roomId,"");
+    
     socket.emit("createRoom", roomId);
   }, [roomId, startLocalStream]);
 
   const joinRoom = useCallback(async () => {
     await startLocalStream();
+    console.log(roomId,"roomid");
+    
     socket.emit("joinRoom", roomId);
     setIsInRoom(true);
   }, [roomId, startLocalStream]);
@@ -343,16 +371,29 @@ function App() {
       ) : (
         <div className="flex flex-col items-center space-y-4">
           <div className="remote-videos bg-black grid grid-cols-1 md:grid-cols-3 gap-4">
-            {users.filter((user) => user.id !== socket.id).map((user) => (
-              <video
-                key={user.id}
-                autoPlay
-                playsInline
-                className="w-full h-auto rounded-md"
-                // eslint-disable-next-line react/no-unknown-property
-                srcObject={user.stream}
-              />
-            ))}
+            {users
+              .filter((user) => user.id !== socket.id && user.stream)
+ 
+              .map(
+                (user) => (
+                  console.log(user),
+                  (
+                    <video
+                      key={user.id}
+                      autoPlay 
+                      playsInline
+                      className="w-full h-auto rounded-md"
+                      // eslint-disable-next-line react/no-unknown-property
+                      // srcObject ={user.stream} 
+                      ref={(el) => { 
+                        if (el) {
+                          el.srcObject = user.stream; 
+                        }
+                      }} 
+                    />
+                  )   
+                )
+              )}
           </div>
           {localStream && (
             <video
