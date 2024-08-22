@@ -112,20 +112,22 @@ function App() {
       }
 
       // Update the remote user's stream
-      const remoteVideo = remoteVideosRef.current[userId];
-      if (remoteVideo) {
-        remoteVideo.srcObject = pcsRef.current[userId]?.remoteStream;
-      }
+      const remoteStream = pcsRef.current[userId]?.remoteStream;
+      setUsers((prevUsers) =>
+        prevUsers.map((user) =>
+          user.id === userId ? { ...user, stream: remoteStream } : user
+        )
+      );
     }
 
     // Update the local user's stream after creating peer connections
-    setUsers((prevUsers) =>
-      prevUsers.map((user) =>
-        user.id !== socket.id
-          ? { ...user, stream: pcsRef.current[user.id]?.remoteStream }
-          : { ...user, stream: localStream }
-      )
-    );
+    // setUsers((prevUsers) =>
+    //   prevUsers.map((user) =>
+    //     user.id !== socket.id
+    //       ? { ...user, stream: pcsRef.current[user.id]?.remoteStream }
+    //       : { ...user, stream: localStream }
+    //   )
+    // );
   };
   const handleMessage = async (message) => {
     switch (message.type) {
@@ -198,12 +200,6 @@ function App() {
           pc.addTrack(track, stream);
         });
 
-        setUsers((prevUsers) => [
-          ...prevUsers.filter((user) => user.id !== userId),
-          { id: userId, stream },
-        ]);
-
-        // Create and send an offer
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         socket.emit("message", {
@@ -213,6 +209,12 @@ function App() {
           roomId,
           to: userId,
         });
+        setUsers((prevUsers) => [
+          ...prevUsers.filter((user) => user.id !== userId),
+          { id: userId, stream },
+        ]);
+
+        // Create and send an offer
       } catch (err) {
         console.error("Error accessing media devices:", err);
       }
