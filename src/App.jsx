@@ -14,7 +14,7 @@ const configuration = {
  
 // http://localhost:5000
 // https://videocall-backend-wqwv.onrender.com
-const socket = io("http://localhost:5000", {
+const socket = io("https://videocall-backend-wqwv.onrender.com", {
   transports: ["websocket"],
 });
 
