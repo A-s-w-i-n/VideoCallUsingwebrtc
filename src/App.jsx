@@ -11,7 +11,7 @@ const configuration = {
   ],
   iceCandidatePoolSize: 10,
 };
- 
+
 // http://localhost:5000
 // https://videocall-backend-wqwv.onrender.com
 const socket = io("https://videocall-backend-wqwv.onrender.com", {
@@ -25,10 +25,11 @@ function App() {
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [localStream, setLocalStream] = useState(null);
   const localVideoRef = useRef(null);
-  const remoteVideoRefs = useRef({});
   const remoteVideosRef = useRef({});
   const [users, setUsers] = useState([]);
   const pcsRef = useRef({});
+
+  console.log(users);
 
   useEffect(() => {
     socket.on("message", handleMessage);
@@ -83,23 +84,18 @@ function App() {
       if (!pcsRef.current[userId]) {
         await createPeerConnection(userId);
 
-        if (!remoteVideoRefs.current[userId]) {
-          remoteVideoRefs.current[userId] = React.createRef();
-        }
-      
-
         // Ensure an offer is created and sent when joining the room
-        // if (isInRoom && userId !== socket.id) {
-        //   const offer = await pcsRef.current[userId].createOffer();
-        //   await pcsRef.current[userId].setLocalDescription(offer);
-        //   socket.emit("message", {
-        //     type: "offer",
-        //     sdp: offer.sdp,
-        //     from: socket.id,
-        //     roomId,
-        //     to: userId,
-        //   });
-        // }
+        if (isInRoom && userId !== socket.id) {
+          const offer = await pcsRef.current[userId].createOffer();
+          await pcsRef.current[userId].setLocalDescription(offer);
+          socket.emit("message", {
+            type: "offer",
+            sdp: offer.sdp,
+            from: socket.id,
+            roomId,
+            to: userId,
+          });
+        }
 
         // Create and append video element for the remote user
         // if (!remoteVideosRef.current[userId]) {
@@ -116,7 +112,7 @@ function App() {
       }
 
       // Update the remote user's stream
-      const remoteVideo = remoteVideoRefs.current[userId]?.current;
+      const remoteVideo = remoteVideosRef.current[userId];
       if (remoteVideo) {
         remoteVideo.srcObject = pcsRef.current[userId]?.remoteStream;
       }
@@ -350,19 +346,19 @@ function App() {
     } else {
       pc = pcsRef.current[offer.from];
     }
-  
+
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
-  
+
     // Ensure local stream is added to the peer connection
     if (localStream) {
       localStream.getTracks().forEach((track) => {
         pc.addTrack(track, localStream);
       });
     }
-  
+
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-  
+
     socket.emit("message", {
       type: "answer",
       sdp: answer.sdp,
@@ -425,7 +421,7 @@ function App() {
     socket.emit("createRoom", roomId);
   }, [roomId, startLocalStream]);
 
-  const   joinRoom = useCallback(async () => {
+  const joinRoom = useCallback(async () => {
     await startLocalStream();
     console.log(roomId, "roomid");
 
@@ -500,44 +496,52 @@ function App() {
       ) : (
         <div className="flex flex-col items-center space-y-4">
           <div className="remote-videos border border-black grid grid-cols-1 md:grid-cols-3 gap-4">
-  {users
-    .filter((user) => user.id !== socket.id)
-    .map((user) => (
-      console.log(user),
-      
-      <div key={user.id} className="relative">
-        {user.stream ? (
-          <video
-            autoPlay
-            playsInline
-            className="w-full h-auto rounded-md"
-            ref={(el) => {
-              if (el && user.stream && el.srcObject !== user.stream) {
-                el.srcObject = user.stream;
-              }
-            }}
-          />
-        ) : (
-          <div className="w-full h-full bg-gray-300 flex items-center justify-center rounded-md">
-            <p>Waiting for stream...</p>
+            {users
+              .filter((user) => user.id !== socket.id)
+              .map(
+                (user) => (
+                  console.log(user),
+                  (
+                    <div key={user.id} className="relative">
+                      {user.stream ? (
+                        <video
+                          autoPlay
+                          playsInline
+                          className="w-full h-auto rounded-md"
+                          ref={(el) => {
+                            console.log(el);
+
+                            if (el && user.stream) {
+                              console.log("jiiii");
+                              el.srcObject = user.stream;
+                            } else {
+                              console.log("dont");
+                            }
+                          }}
+                        />
+                      ) : (
+                        <div className="w-full h-full bg-gray-300 flex items-center justify-center rounded-md">
+                          <p>Waiting for stream...</p>
+                        </div>
+                      )}
+                    </div>
+                  )
+                )
+              )}
           </div>
-        )}
-      </div>
-    ))}
-</div>
-          {localStream && (
-            console.log(localStream),
-            
-            <video
-              ref={localVideoRef}
-              autoPlay
-              playsInline
-              muted
-              className="w-64 h-auto rounded-md self-center"
-              // eslint-disable-next-line react/no-unknown-property
-              srcObject={localStream}
-            />
-          )}
+          {localStream &&
+            (console.log(localStream),
+            (
+              <video
+                ref={localVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-64 h-auto rounded-md self-center"
+                // eslint-disable-next-line react/no-unknown-property
+                srcObject={localStream}
+              />
+            ))}
           <div className="flex space-x-4 mt-4">
             <button
               onClick={toggleAudio}
