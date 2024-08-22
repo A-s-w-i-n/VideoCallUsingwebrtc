@@ -11,10 +11,10 @@ const configuration = {
   ],
   iceCandidatePoolSize: 10,
 };
-
+ 
 // http://localhost:5000
 // https://videocall-backend-wqwv.onrender.com
-const socket = io("https://videocall-backend-wqwv.onrender.com", {
+const socket = io("http://localhost:5000", {
   transports: ["websocket"],
 });
 
@@ -25,6 +25,7 @@ function App() {
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [localStream, setLocalStream] = useState(null);
   const localVideoRef = useRef(null);
+  const remoteVideoRefs = useRef({});
   const remoteVideosRef = useRef({});
   const [users, setUsers] = useState([]);
   const pcsRef = useRef({});
@@ -82,18 +83,23 @@ function App() {
       if (!pcsRef.current[userId]) {
         await createPeerConnection(userId);
 
-        // Ensure an offer is created and sent when joining the room
-        if (isInRoom && userId !== socket.id) {
-          const offer = await pcsRef.current[userId].createOffer();
-          await pcsRef.current[userId].setLocalDescription(offer);
-          socket.emit("message", {
-            type: "offer",
-            sdp: offer.sdp,
-            from: socket.id,
-            roomId,
-            to: userId,
-          });
+        if (!remoteVideoRefs.current[userId]) {
+          remoteVideoRefs.current[userId] = React.createRef();
         }
+      
+
+        // Ensure an offer is created and sent when joining the room
+        // if (isInRoom && userId !== socket.id) {
+        //   const offer = await pcsRef.current[userId].createOffer();
+        //   await pcsRef.current[userId].setLocalDescription(offer);
+        //   socket.emit("message", {
+        //     type: "offer",
+        //     sdp: offer.sdp,
+        //     from: socket.id,
+        //     roomId,
+        //     to: userId,
+        //   });
+        // }
 
         // Create and append video element for the remote user
         // if (!remoteVideosRef.current[userId]) {
@@ -110,7 +116,7 @@ function App() {
       }
 
       // Update the remote user's stream
-      const remoteVideo = remoteVideosRef.current[userId];
+      const remoteVideo = remoteVideoRefs.current[userId]?.current;
       if (remoteVideo) {
         remoteVideo.srcObject = pcsRef.current[userId]?.remoteStream;
       }
@@ -497,6 +503,8 @@ function App() {
   {users
     .filter((user) => user.id !== socket.id)
     .map((user) => (
+      console.log(user),
+      
       <div key={user.id} className="relative">
         {user.stream ? (
           <video
@@ -518,6 +526,8 @@ function App() {
     ))}
 </div>
           {localStream && (
+            console.log(localStream),
+            
             <video
               ref={localVideoRef}
               autoPlay
