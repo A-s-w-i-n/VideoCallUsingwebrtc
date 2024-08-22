@@ -142,45 +142,80 @@ function App() {
     }
   };
 
+  // const handleUserJoined = async (userId) => {
+  //   console.log(`User ${userId} joined the room`);
+
+  //   console.log(pcsRef.current);
+
+  //   if (!pcsRef.current[userId]) {
+  //     console.log("hiiiiiii");
+
+  //     await createPeerConnection(userId);
+  //     if (isInRoom) {
+  //       console.log("jiii");
+
+  //       console.log(isInRoom);
+
+  //       const offer = await pcsRef.current[userId].createOffer();
+  //       await pcsRef.current[userId].setLocalDescription(offer);
+  //       socket.emit("message", {
+  //         type: "offer",
+  //         sdp: offer.sdp,
+  //         from: socket.id,
+  //         roomId,
+  //         to: userId,
+  //       });
+  //     }
+  //   }
+
+  //   // setUsers((prevUsers) => [
+  //   //   ...prevUsers,
+  //   //   { id: userId, stream: pcsRef.current[userId]?.remoteStream || null },
+  //   // ]);
+  //   console.log("hiiii");
+
+  //   setUsers((prevUsers) => [
+  //     ...prevUsers.filter((user) => user.id !== userId),
+  //     { id: userId, stream: null },
+  //   ]);
+  // };
 
   const handleUserJoined = async (userId) => {
     console.log(`User ${userId} joined the room`);
 
-
-    console.log(pcsRef.current);
-    
-
-
     if (!pcsRef.current[userId]) {
-      console.log("hiiiiiii");
+      const pc = await createPeerConnection(userId);
 
-      await createPeerConnection(userId);
-      if (isInRoom) {
-        console.log("jiii");
-        
-        console.log(isInRoom);
+      // Request user media immediately
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user" },
+          audio: true,
+        });
+        stream.getTracks().forEach((track) => {
+          pc.addTrack(track, stream);
+        });
 
-        const offer = await pcsRef.current[userId].createOffer();
-        await pcsRef.current[userId].setLocalDescription(offer);
+        setUsers((prevUsers) => [
+          ...prevUsers.filter((user) => user.id !== userId),
+          { id: userId, stream },
+        ]);
+
+        // Create and send an offer
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
         socket.emit("message", {
           type: "offer",
           sdp: offer.sdp,
           from: socket.id,
           roomId,
-          to: userId, 
+          to: userId,
         });
+      } catch (err) {
+        console.error("Error accessing media devices:", err);
       }
     }
-    
-
-    setUsers((prevUsers) => [
-      ...prevUsers,
-      { id: userId, stream: pcsRef.current[userId]?.remoteStream || null },
-    ]);
-    console.log("hiiii");
-
   };
-
   const handleUserLeft = (userId) => {
     console.log(`User ${userId} left the room`);
     if (pcsRef.current[userId]) {
@@ -210,33 +245,67 @@ function App() {
     alert(error);
   };
 
+  // const createPeerConnection = async (userId) => {
+  //   const pc = new RTCPeerConnection(configuration);
+
+  //   pc.ontrack = (e) => {
+  //     const remoteStream = e.streams[0];
+  //     console.log(remoteStream, "checking");
+
+  //     setUsers((prevUsers) =>
+  //       prevUsers.map((user) =>
+  //         user.id === userId ? { ...user, stream: remoteStream } : user
+  //       )
+  //     );
+
+  //     // Create and append video element if not already present
+  //     if (!remoteVideosRef.current[userId]) {
+  //       const video = document.createElement("video");
+  //       video.srcObject = remoteStream;
+  //       video.autoplay = true;
+  //       video.playsInline = true;
+  //       video.className = "remote-video";
+  //       remoteVideosRef.current[userId] = video;
+  //       const remoteVideosContainer = document.querySelector(".remote-videos");
+  //       if (remoteVideosContainer) {
+  //         remoteVideosContainer.appendChild(video);
+  //       }
+  //     } else {
+  //       remoteVideosRef.current[userId].srcObject = remoteStream;
+  //     }
+  //   };
+
+  //   if (localStream) {
+  //     localStream.getTracks().forEach((track) => {
+  //       pc.addTrack(track, localStream);
+  //     });
+  //   }
+  //   pcsRef.current[userId] = pc;
+  //   return pc
+  // };
   const createPeerConnection = async (userId) => {
     const pc = new RTCPeerConnection(configuration);
 
     pc.ontrack = (e) => {
-      const remoteStream = e.streams[0];
-      console.log(remoteStream, "checking");
+      console.log("Received track for user", userId);
+      const [remoteStream] = e.streams;
 
       setUsers((prevUsers) =>
         prevUsers.map((user) =>
           user.id === userId ? { ...user, stream: remoteStream } : user
         )
       );
+    };
 
-      // Create and append video element if not already present
-      if (!remoteVideosRef.current[userId]) {
-        const video = document.createElement("video");
-        video.srcObject = remoteStream;
-        video.autoplay = true;
-        video.playsInline = true;
-        video.className = "remote-video";
-        remoteVideosRef.current[userId] = video;
-        const remoteVideosContainer = document.querySelector(".remote-videos");
-        if (remoteVideosContainer) {
-          remoteVideosContainer.appendChild(video);
-        }
-      } else {
-        remoteVideosRef.current[userId].srcObject = remoteStream;
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit("message", {
+          type: "candidate",
+          candidate: event.candidate,
+          from: socket.id,
+          to: userId,
+          roomId,
+        });
       }
     };
 
@@ -245,18 +314,49 @@ function App() {
         pc.addTrack(track, localStream);
       });
     }
+
     pcsRef.current[userId] = pc;
+    return pc;
   };
+  // const handleOffer = async (offer) => {
+  //   if (!pcsRef.current[offer.from]) {
+  //     await createPeerConnection(offer.from);
+  //   }
+  //   await pcsRef.current[offer.from].setRemoteDescription(
+  //     new RTCSessionDescription({ type: "offer", sdp: offer.sdp })
+  //   );
+  //   const answer = await pcsRef.current[offer.from].createAnswer();
+  //   await pcsRef.current[offer.from].setLocalDescription(answer);
+  //   socket.emit("message", {
+  //     type: "answer",
+  //     sdp: answer.sdp,
+  //     from: socket.id,
+  //     roomId,
+  //     to: offer.from,
+  //   });
+  // };
 
   const handleOffer = async (offer) => {
+    console.log("Received offer from", offer.from);
+    let pc;
     if (!pcsRef.current[offer.from]) {
-      await createPeerConnection(offer.from);
+      pc = await createPeerConnection(offer.from);
+    } else {
+      pc = pcsRef.current[offer.from];
     }
-    await pcsRef.current[offer.from].setRemoteDescription(
-      new RTCSessionDescription({ type: "offer", sdp: offer.sdp })
-    );
-    const answer = await pcsRef.current[offer.from].createAnswer();
-    await pcsRef.current[offer.from].setLocalDescription(answer);
+  
+    await pc.setRemoteDescription(new RTCSessionDescription(offer));
+  
+    // Ensure local stream is added to the peer connection
+    if (localStream) {
+      localStream.getTracks().forEach((track) => {
+        pc.addTrack(track, localStream);
+      });
+    }
+  
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+  
     socket.emit("message", {
       type: "answer",
       sdp: answer.sdp,
@@ -266,16 +366,31 @@ function App() {
     });
   };
 
+  // const handleAnswer = async (answer) => {
+  //   await pcsRef.current[answer.from].setRemoteDescription(
+  //     new RTCSessionDescription({ type: "answer", sdp: answer.sdp })
+  //   );
+  // };
   const handleAnswer = async (answer) => {
-    await pcsRef.current[answer.from].setRemoteDescription(
-      new RTCSessionDescription({ type: "answer", sdp: answer.sdp })
-    );
+    console.log("Received answer from", answer.from);
+    const pc = pcsRef.current[answer.from];
+    if (pc) {
+      await pc.setRemoteDescription(new RTCSessionDescription(answer));
+    }
   };
 
-  const handleCandidate = async (candidate) => {
-    await pcsRef.current[candidate.from].addIceCandidate(
-      new RTCIceCandidate(candidate.candidate)
-    );
+  // const handleCandidate = async (candidate) => {
+  //   await pcsRef.current[candidate.from].addIceCandidate(
+  //     new RTCIceCandidate(candidate.candidate)
+  //   );
+  // };
+
+  const handleCandidate = async (message) => {
+    console.log("Received ICE candidate from", message.from);
+    const pc = pcsRef.current[message.from];
+    if (pc) {
+      await pc.addIceCandidate(new RTCIceCandidate(message.candidate));
+    }
   };
   console.log(localStream);
 
@@ -288,7 +403,10 @@ function App() {
       console.log(stream);
 
       setLocalStream(stream);
-      setUsers((prevUsers) => [...prevUsers, { id: socket.id, stream }]);
+      setUsers((prevUsers) => [
+        ...prevUsers.filter((user) => user.id !== socket.id),
+        { id: socket.id, stream, isLocalUser: true },
+      ]);
     } catch (err) {
       console.error("Error accessing media devices:", err);
     }
@@ -296,15 +414,15 @@ function App() {
 
   const createRoom = useCallback(async () => {
     await startLocalStream();
-    console.log(roomId,"");
-    
+    console.log(roomId, "");
+
     socket.emit("createRoom", roomId);
   }, [roomId, startLocalStream]);
 
-  const joinRoom = useCallback(async () => {
+  const   joinRoom = useCallback(async () => {
     await startLocalStream();
-    console.log(roomId,"roomid");
-    
+    console.log(roomId, "roomid");
+
     socket.emit("joinRoom", roomId);
     setIsInRoom(true);
   }, [roomId, startLocalStream]);
@@ -341,6 +459,11 @@ function App() {
     }
   };
 
+  useEffect(() => {
+    console.log("Users state updated:", users);
+    console.log("Peer connections:", pcsRef.current);
+  }, [users]);
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
       <h1 className="text-2xl font-bold mb-4">Video Call App</h1>
@@ -370,31 +493,30 @@ function App() {
         </div>
       ) : (
         <div className="flex flex-col items-center space-y-4">
-          <div className="remote-videos bg-black grid grid-cols-1 md:grid-cols-3 gap-4">
-            {users
-              .filter((user) => user.id !== socket.id && user.stream)
- 
-              .map(
-                (user) => (
-                  console.log(user),
-                  (
-                    <video
-                      key={user.id}
-                      autoPlay 
-                      playsInline
-                      className="w-full h-auto rounded-md"
-                      // eslint-disable-next-line react/no-unknown-property
-                      // srcObject ={user.stream} 
-                      ref={(el) => { 
-                        if (el) {
-                          el.srcObject = user.stream; 
-                        }
-                      }} 
-                    />
-                  )   
-                )
-              )}
+          <div className="remote-videos border border-black grid grid-cols-1 md:grid-cols-3 gap-4">
+  {users
+    .filter((user) => user.id !== socket.id)
+    .map((user) => (
+      <div key={user.id} className="relative">
+        {user.stream ? (
+          <video
+            autoPlay
+            playsInline
+            className="w-full h-auto rounded-md"
+            ref={(el) => {
+              if (el && user.stream && el.srcObject !== user.stream) {
+                el.srcObject = user.stream;
+              }
+            }}
+          />
+        ) : (
+          <div className="w-full h-full bg-gray-300 flex items-center justify-center rounded-md">
+            <p>Waiting for stream...</p>
           </div>
+        )}
+      </div>
+    ))}
+</div>
           {localStream && (
             <video
               ref={localVideoRef}
