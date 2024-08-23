@@ -27,7 +27,6 @@ function App() {
   const localVideoRef = useRef(null);
   const remoteVideosRef = useRef({});
   const [users, setUsers] = useState([]);
-  const [userStream,setUserStream] = useState("")
   const pcsRef = useRef({});
 
   console.log(users);
@@ -51,12 +50,30 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const handleStreamUpdate = () => {
+      setUsers((prevUsers) =>
+        prevUsers.map((user) => {
+          if (user.id === socket.id) {
+            return { ...user, stream: localStream };
+          } else if (pcsRef.current[user.id]) {
+            const pc = pcsRef.current[user.id];
+            const remoteStream = pc.getRemoteStreams()[0];
+            return { ...user, stream: remoteStream || user.stream };
+          }
+          return user;
+        })
+      );
+    };
+  
+    handleStreamUpdate();
+  }, [localStream, pcsRef.current]);
+
+  useEffect(() => {
     if (localStream) {
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = localStream;
       } else {
         const interval = setInterval(() => {
-          console.log(localVideoRef);
           if (localVideoRef.current) {
             localVideoRef.current.srcObject = localStream;
             clearInterval(interval);
@@ -73,66 +90,51 @@ function App() {
     };
   }, []);
 
+  
   const handleRoomUsers = async (users) => {
-    const updatedUsers = users.map((userId) => ({
-      id: userId,
-      stream: userId === socket.id ? localStream : null,
-      isLocalUser: userId === socket.id,
-    }));
-    setUsers(updatedUsers);
-
+    console.log("Room users updated:", users);
+  
     for (const userId of users) {
-      if (!pcsRef.current[userId]) {
+      if (!pcsRef.current[userId] && userId !== socket.id) {
         await createPeerConnection(userId);
-
-        // Ensure an offer is created and sent when joining the room
-        if (isInRoom && userId !== socket.id) {
-          const offer = await pcsRef.current[userId].createOffer();
-          await pcsRef.current[userId].setLocalDescription(offer);
-          socket.emit("message", {
-            type: "offer",
-            sdp: offer.sdp,
-            from: socket.id,
-            roomId,
-            to: userId,
-          });
-        }
-
-        // Create and append video element for the remote user
-        // if (!remoteVideosRef.current[userId]) {
-        //   const video = document.createElement("video");
-        //   video.autoplay = true;
-        //   video.playsInline = true;
-        //   video.className = "remote-video";
-        //   remoteVideosRef.current[userId] = video;
-        //   const remoteVideosContainer = document.querySelector(".remote-videos");
-        //   if (remoteVideosContainer) {
-        //     remoteVideosContainer.appendChild(video);
-        //   }
-        // }
       }
-
-      // Update the remote user's stream
-      console.log(pcsRef.current[userId]);
-
-      const remoteStream = pcsRef.current[userId]?.remoteStream;
-      console.log(remoteStream);
-
-      setUsers((prevUsers) =>
-        prevUsers.map((user) =>
-          user.id === userId ? { ...user, stream: remoteStream } : user
-        )
-      );
     }
-
-    // Update the local user's stream after creating peer connections
-    // setUsers((prevUsers) =>
-    //   prevUsers.map((user) =>
-    //     user.id !== socket.id
-    //       ? { ...user, stream: pcsRef.current[user.id]?.remoteStream }
-    //       : { ...user, stream: localStream }
-    //   )
-    // );
+  
+    setUsers((prevUsers) => {
+      const updatedUsers = users.map((userId) => {
+        const existingUser = prevUsers.find((user) => user.id === userId);
+        return {
+          id: userId,
+          stream: existingUser ? existingUser.stream : null,
+          isLocalUser: userId === socket.id,
+        };
+      });
+      console.log("Updated users state:", updatedUsers);
+      return updatedUsers;
+    });
+  
+    if (isInRoom && localStream) {
+      for (const userId of users) {
+        if (userId !== socket.id && pcsRef.current[userId]) {
+          const pc = pcsRef.current[userId];
+          const senders = pc.getSenders();
+          if (senders.length === 0) {
+            localStream.getTracks().forEach((track) => {
+              pc.addTrack(track, localStream);
+            });
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            socket.emit("message", {
+              type: "offer",
+              sdp: offer.sdp,
+              from: socket.id,
+              roomId,
+              to: userId,
+            });
+          }
+        }
+      }
+    }
   };
   const handleMessage = async (message) => {
     switch (message.type) {
@@ -189,44 +191,74 @@ function App() {
   //   ]);
   // };
 
+  // const handleUserJoined = async (userId) => {
+  //   console.log(`User ${userId} joined the room`);
+
+  //   if (!pcsRef.current[userId]) {
+  //     const pc = await createPeerConnection(userId);
+
+  //     setUsers((prevUsers) => [
+  //       ...prevUsers.filter((user) => user.id !== userId),
+  //       { id: userId, stream: null, isLocalUser: userId === socket.id },
+  //     ]);
+
+      
+  //     if (isInRoom && localStream) {
+  //       localStream.getTracks().forEach((track) => {
+  //         pc.addTrack(track, localStream);
+  //       });
+  
+  //       const offer = await pc.createOffer();
+  //       await pc.setLocalDescription(offer);
+  //       socket.emit("message", {
+  //         type: "offer",
+  //         sdp: offer.sdp,
+  //         from: socket.id,
+  //         roomId,
+  //         to: userId,
+  //       });
+  //     }
+  //   }
+  // };
   const handleUserJoined = async (userId) => {
     console.log(`User ${userId} joined the room`);
-
-    console.log(pcsRef.current[userId]);
-    if (pcsRef.current[userId]) {
-      console.log("hiiiiii");
-
+  
+    console.log(!pcsRef.current[userId]);
+    
+    if (!pcsRef.current[userId] ==false) {
       const pc = await createPeerConnection(userId);
-
-      // Request user media immediately
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user" },
-          audio: true,
+      console.log("hiiii");
+      
+  
+      setUsers((prevUsers) => [
+        ...prevUsers.filter((user) => user.id !== userId),
+        { id: userId, stream: null, isLocalUser: userId === socket.id },
+      ]);
+  
+      console.log(users);
+      console.log(isInRoom);
+      console.log(localStream);
+      
+      
+      
+      if (isInRoom && localStream) {
+        localStream.getTracks().forEach((track) => {
+          pc.addTrack(track, localStream);
         });
-        stream.getTracks().forEach((track) => {
-          pc.addTrack(track, stream);
-          setUserStream(stream)
-          console.log(stream);
-        });
-
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        socket.emit("message", {
-          type: "offer",
-          sdp: offer.sdp,
-          from: socket.id,
-          roomId,
-          to: userId,
-        });
-        setUsers((prevUsers) => [
-          ...prevUsers.filter((user) => user.id !== userId),
-          { id: userId, stream },
-        ]);
-
-        // Create and send an offer
-      } catch (err) {
-        console.error("Error accessing media devices:", err);
+  
+        try {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          socket.emit("message", {
+            type: "offer",
+            sdp: offer.sdp,
+            from: socket.id,
+            roomId,
+            to: userId,
+          });
+        } catch (error) {
+          console.error("Error creating or sending offer:", error);
+        }
       }
     }
   };
@@ -298,15 +330,11 @@ function App() {
   //   return pc
   // };
   const createPeerConnection = async (userId) => {
-    console.log("hii");
-    
     const pc = new RTCPeerConnection(configuration);
 
     pc.ontrack = (e) => {
-      console.log("Received track for user", userId);
-      const remoteStream = e.streams;
-
-      console.log(remoteStream);
+      console.log("Received track for user", userId, e.streams[0]);
+      const [remoteStream] = e.streams;
 
       setUsers((prevUsers) =>
         prevUsers.map((user) =>
@@ -382,8 +410,16 @@ function App() {
       roomId,
       to: offer.from,
     });
-  };
 
+    setUsers((prevUsers) =>
+      prevUsers.map((user) =>
+        user.id === offer.from ? { ...user, stream: pc.remoteStream } : user
+      )
+    );
+
+    console.log(remoteVideosRef.current);
+    
+  };
   // const handleAnswer = async (answer) => {
   //   await pcsRef.current[answer.from].setRemoteDescription(
   //     new RTCSessionDescription({ type: "answer", sdp: answer.sdp })
@@ -425,6 +461,12 @@ function App() {
         ...prevUsers.filter((user) => user.id !== socket.id),
         { id: socket.id, stream, isLocalUser: true },
       ]);
+
+      Object.values(pcsRef.current).forEach((pc) => {
+        stream.getTracks().forEach((track) => {
+          pc.addTrack(track, stream);
+        });
+      });
     } catch (err) {
       console.error("Error accessing media devices:", err);
     }
@@ -512,38 +554,39 @@ function App() {
       ) : (
         <div className="flex flex-col items-center space-y-4">
           <div className="remote-videos border border-black grid grid-cols-1 md:grid-cols-3 gap-4">
-            {users
-              .filter((user) => user.id !== socket.id)
-              .map(
-                (user) => (
-                  console.log(user),
-                  (
-                    <div key={user.id} className="relative">
-                      {user.stream ? (
-                        <video
-                          autoPlay
-                          playsInline
-                          className="w-full h-auto rounded-md"
-                          ref={(el) => {
-                            console.log(el);
-
-                            if (el && userStream) {
-                              console.log("jiiii");
-                              el.srcObject = userStream;
-                            } else {
-                              console.log("dont");
-                            }
-                          }}
-                        />
-                      ) : (
-                        <div className="w-full h-full bg-gray-300 flex items-center justify-center rounded-md">
-                          <p>Waiting for stream...</p>
-                        </div>
-                      )}
-                    </div>
-                  )
-                )
-              )}
+            {users.map((user) => (
+              <div key={user.id} className="relative">
+                {console.log(
+                  "Rendering user:",
+                  user.id,
+                  "Stream:",
+                  user.stream
+                )}
+                {user.stream ? (
+                  <video
+                    autoPlay
+                    playsInline
+                    muted={user.isLocalUser}
+                    className="w-full h-auto rounded-md"
+                    ref={(el) => {
+                      if (el && user.stream) {
+                        console.log("Setting srcObject for user:", user.id);
+                        el.srcObject = user.stream;
+                      }
+                    }}
+                  />
+                ) : (
+                  <div className="w-full h-full bg-gray-300 flex items-center justify-center rounded-md">
+                    <p>Waiting for stream... (User ID: {user.id})</p>
+                  </div>
+                )}
+                {user.isLocalUser && (
+                  <p className="absolute top-0 left-0 p-2 bg-black text-white">
+                    You
+                  </p>
+                )}
+              </div>
+            ))}
           </div>
           {localStream &&
             (console.log(localStream),
